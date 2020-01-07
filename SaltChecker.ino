@@ -11,8 +11,15 @@
 // Delay between pulses in milliseconds
 const int delayBetweenPulses = 250;
 
+// Highest standard deviation allowed before redoing the sensor reading
+const int highestStdDevAllowed = 10;
+
 // Total readings per sensor
 const int totalReadingsPerSensor = 5;
+
+// How many times should you redo the sensor readings
+// if the standard deviation check fails?
+const int totalRedoCountForStdDev = 5;
 
 // Get the WiFi credentials from the secrets file
 char ssid[] = SECRET_SSID; // WiFi Name
@@ -61,7 +68,7 @@ void setup() {
   while (status != WL_CONNECTED && attempts < 10) {
     status = WiFi.begin(ssid, pass);
     delay(3000 * attempts);
-    attempts = attempts + 1;
+    attempts++;
   }
 
   if (status == WL_CONNECTED) {
@@ -92,86 +99,118 @@ void didFailSetup() {
 void loop() {
   // Listen for incoming HTTP requests
   WiFiClient client = server.available();
+
+  // If a client connected, we need to read the sensors and form a response
   if (client) {
-    // An http request ends with a blank line
+    // Wait until the current line is blank so we know the request has finished
     boolean currentLineIsBlank = true;
     while (client.connected()) {
       if (client.available()) {
+        // Read all of the available client data until we hit a blank line
         char c = client.read();
         Serial.write(c);
-        if (c == '\n' && currentLineIsBlank) {
 
+        // We reached a blank line, now we can start on the response!
+        if (c == '\n' && currentLineIsBlank) {
+          
           // Send a standard http response header
           client.println("HTTP/1.1 200 OK");
           client.println("Content-Type: text/json");
           client.println("Connection: close");  // the connection will be closed after completion of the response
           client.println();
 
-          // If a client connected it means they want data. Read it on-demand and send it back.
+          // Read the sensors to form the response body
+          // Populate this response in a string and concatenate to it.
+          //
+          // Responses are in the format: 
+          // 
+          //
           String response = "{\"readings\":[";
           for (int i = 0; i < numSensors; i++) {
 
             // Collect data for this sensor.
             // If the standard deviation is too high, re-collect it.
-            
-            int total = 0;
-            int rValues[totalReadingsPerSensor];
-            float sqDevSum = 0.0;
+            int sensorReadAttempts = 0;
+            float stDev = 0.0;
 
-            for (int k = 0; k < totalReadingsPerSensor; k++) {
-              int reading = sonarSensors[i].ping_in();
-              int readAttempts = 1;
-              while (reading == 0 && readAttempts < 10) {
-                // We want to discard readings of 0 as they're likely erroneous
-                Serial.println("Discarding 0 reading...");
-                reading = sonarSensors[i].ping_in();
-                readAttempts = readAttempts + 1;
+            do {
+              int total = 0;
+              int rValues[totalReadingsPerSensor];
+
+              for (int k = 0; k < totalReadingsPerSensor; k++) {
+
+                int reading = sonarSensors[i].ping_in();
+                int readAttempts = 1;
+                while (reading == 0 && readAttempts < 10) {
+                  // We want to discard readings of 0 as they're likely erroneous
+                  Serial.println("Discarding 0 reading...");
+                  reading = sonarSensors[i].ping_in();
+                  readAttempts++;
+                  delay(delayBetweenPulses);
+                }
+
+                rValues[k] = reading;
+                total = total + reading;
+
+                if (DEBUG) {
+                  Serial.print("Reading ");
+                  Serial.print(k);
+                  Serial.print(" from sensor ");
+                  Serial.print(i);
+                  Serial.print(": ");
+                  Serial.println(reading);
+                }
+
                 delay(delayBetweenPulses);
               }
 
-              rValues[k] = reading;
-              total = total + reading;
+              // Get the average
+              float average = float(total) / float(totalReadingsPerSensor);
 
-              if (DEBUG) {
-                Serial.print("Reading ");
-                Serial.print(k);
-                Serial.print(" from sensor ");
-                Serial.print(i);
-                Serial.print(": ");
-                Serial.println(reading);
+              // Add the average to the response
+              response = response + average;
+
+              if (average > 1000) {
+                Serial.println("SOMETHING WENT WRONG!!!");
               }
 
-              delay(delayBetweenPulses);
-            }
+              Serial.print("Average: ");
+              Serial.print(average);
+              Serial.println("");
 
-            // Get the average
-            float average = float(total) / float(totalReadingsPerSensor);
-            response = response + average;
-            
-            Serial.print("Average: ");
-            Serial.print(average);
-            Serial.println("");
+              // Get the std deviation
+              float sqDevSum = 0.0;
+              for (int v = 0; v < totalReadingsPerSensor; v++) {
+                // pow(x, 2) is x squared.
+                sqDevSum += pow((average - float(rValues[v])), 2);
+              }
 
-            // Get the std deviation
-            for(int v = 0; v < totalReadingsPerSensor; v++) {
-              // pow(x, 2) is x squared.
-              sqDevSum += pow((average - float(rValues[v])), 2);
-            }
-          
-            float stDev = sqrt(sqDevSum/float(totalReadingsPerSensor));
-            Serial.print("Std Dev: ");
-            Serial.println(stDev);
-            Serial.println("");
+              // Calculate the standard deviation so we know if any readings were potentially bogus
+              stDev = sqrt(sqDevSum / float(totalReadingsPerSensor));
+              Serial.print("Std Dev: ");
+              Serial.println(stDev);
+              Serial.println("");
+              
+              sensorReadAttempts++;
+              
+            } while (stDev > highestStdDevAllowed && sensorReadAttempts < totalRedoCountForStdDev);
+            // Keep reading until the Std Dev is appropriate or until we've reached out maximum attempts 
 
+            // If this isn't the last reading, append a "," to save in JSON form
             if (i < numSensors - 1) {
               response = response + ",";
             }
           }
 
+          // End the JSON-formatted response
           response = response + "]}";
+
+          // Send the response
           client.println(response);
+          
           break;
         }
+        
         if (c == '\n') {
           // you're starting a new line
           currentLineIsBlank = true;
