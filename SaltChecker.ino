@@ -8,6 +8,12 @@
 // Print out extra commands to the serial line if true
 #define DEBUG true
 
+// Delay between pulses in milliseconds
+const int delayBetweenPulses = 250;
+
+// Total readings per sensor
+const int totalReadingsPerSensor = 5;
+
 // Get the WiFi credentials from the secrets file
 char ssid[] = SECRET_SSID; // WiFi Name
 char pass[] = SECRET_PASS; // WiFi Password
@@ -101,14 +107,29 @@ void loop() {
           client.println("Connection: close");  // the connection will be closed after completion of the response
           client.println();
 
-          // Build a response with the just-read readings
+          // If a client connected it means they want data. Read it on-demand and send it back.
           String response = "{\"readings\":[";
           for (int i = 0; i < numSensors; i++) {
 
-            const int totalReadingsPerSensor = 5;
+            // Collect data for this sensor.
+            // If the standard deviation is too high, re-collect it.
+            
             int total = 0;
+            int rValues[totalReadingsPerSensor];
+            float sqDevSum = 0.0;
+
             for (int k = 0; k < totalReadingsPerSensor; k++) {
               int reading = sonarSensors[i].ping_in();
+              int readAttempts = 1;
+              while (reading == 0 && readAttempts < 10) {
+                // We want to discard readings of 0 as they're likely erroneous
+                Serial.println("Discarding 0 reading...");
+                reading = sonarSensors[i].ping_in();
+                readAttempts = readAttempts + 1;
+                delay(delayBetweenPulses);
+              }
+
+              rValues[k] = reading;
               total = total + reading;
 
               if (DEBUG) {
@@ -120,12 +141,27 @@ void loop() {
                 Serial.println(reading);
               }
 
-              delay(60);
+              delay(delayBetweenPulses);
             }
+
+            // Get the average
+            float average = float(total) / float(totalReadingsPerSensor);
+            response = response + average;
+            
+            Serial.print("Average: ");
+            Serial.print(average);
             Serial.println("");
 
-            int average = total / totalReadingsPerSensor;
-            response = response + average;
+            // Get the std deviation
+            for(int v = 0; v < totalReadingsPerSensor; v++) {
+              // pow(x, 2) is x squared.
+              sqDevSum += pow((average - float(rValues[v])), 2);
+            }
+          
+            float stDev = sqrt(sqDevSum/float(totalReadingsPerSensor));
+            Serial.print("Std Dev: ");
+            Serial.println(stDev);
+            Serial.println("");
 
             if (i < numSensors - 1) {
               response = response + ",";
