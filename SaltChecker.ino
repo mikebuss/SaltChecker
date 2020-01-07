@@ -135,7 +135,7 @@ void loop() {
               int total = 0;
               int rValues[totalReadingsPerSensor];
               Serial.print("Attempt #");
-              Serial.print(sensorReadAttempts+1);
+              Serial.print(sensorReadAttempts + 1);
               Serial.print(" for sensor #");
               Serial.print(i);
               Serial.print(": [ ");
@@ -187,12 +187,21 @@ void loop() {
 
             // Add the average to the response if we passed the standard deviation test (or reached max attempts)
             // We don't care about float precision so we round to an integer.
-            response = response + int(average);
 
-            // If this isn't the last reading, append a "," to save in JSON form
-            if (i < numSensors - 1) {
+            response = response + "{";
+            response = response + " \"average\": ";
+            response = response + int(average);
+            response = response + ",";
+
+            response = response + " \"stDev\": ";
+            response = response + stDev;
+            response = response + "}";
+
+            if (i < numSensors-1) {
               response = response + ",";
             }
+
+
           }
 
           // End the JSON-formatted response
