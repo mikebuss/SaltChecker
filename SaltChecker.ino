@@ -5,21 +5,18 @@
 // Store WiFi credentials in secrets file. Not checked into version control.
 #include "arduino_secrets.h"
 
-// Print out extra commands to the serial line if true
-#define DEBUG true
-
 // Delay between pulses in milliseconds
-const int delayBetweenPulses = 250;
+const int delayBetweenPulses = 60;
 
 // Highest standard deviation allowed before redoing the sensor reading
 const int highestStdDevAllowed = 10;
 
 // Total readings per sensor
-const int totalReadingsPerSensor = 5;
+const int totalReadingsPerSensor = 8;
 
 // How many times should you redo the sensor readings
 // if the standard deviation check fails?
-const int totalRedoCountForStdDev = 5;
+const int totalRedoCountForStdDev = 20;
 
 // Get the WiFi credentials from the secrets file
 char ssid[] = SECRET_SSID; // WiFi Name
@@ -112,7 +109,7 @@ void loop() {
 
         // We reached a blank line, now we can start on the response!
         if (c == '\n' && currentLineIsBlank) {
-          
+
           // Send a standard http response header
           client.println("HTTP/1.1 200 OK");
           client.println("Content-Type: text/json");
@@ -122,8 +119,8 @@ void loop() {
           // Read the sensors to form the response body
           // Populate this response in a string and concatenate to it.
           //
-          // Responses are in the format: 
-          // 
+          // Responses are in the format:
+          //
           //
           String response = "{\"readings\":[";
           for (int i = 0; i < numSensors; i++) {
@@ -133,17 +130,21 @@ void loop() {
             int sensorReadAttempts = 0;
             float average = 0.0;
             float stDev = 0.0;
-            
+
             do {
               int total = 0;
               int rValues[totalReadingsPerSensor];
+              Serial.print("Attempt #");
+              Serial.print(sensorReadAttempts+1);
+              Serial.print(" for sensor #");
+              Serial.print(i);
+              Serial.print(": [ ");
 
               for (int k = 0; k < totalReadingsPerSensor; k++) {
                 int reading = sonarSensors[i].ping_in();
                 int readAttempts = 1;
                 while (reading == 0 && readAttempts < 10) {
                   // We want to discard readings of 0 as they're likely erroneous
-                  Serial.println("Discarding 0 reading...");
                   reading = sonarSensors[i].ping_in();
                   readAttempts++;
                   delay(delayBetweenPulses);
@@ -152,17 +153,12 @@ void loop() {
                 rValues[k] = reading;
                 total = total + reading;
 
-                if (DEBUG) {
-                  Serial.print("Reading ");
-                  Serial.print(k);
-                  Serial.print(" from sensor ");
-                  Serial.print(i);
-                  Serial.print(": ");
-                  Serial.println(reading);
-                }
+                Serial.print(reading);
+                Serial.print(" ");
 
                 delay(delayBetweenPulses);
               }
+              Serial.println("]");
 
               // Get the average
               average = float(total) / float(totalReadingsPerSensor);
@@ -183,11 +179,11 @@ void loop() {
               Serial.print("Std Dev: ");
               Serial.println(stDev);
               Serial.println("");
-              
+
               sensorReadAttempts++;
-              
+
             } while (stDev > highestStdDevAllowed && sensorReadAttempts < totalRedoCountForStdDev);
-            // Keep reading until the Std Dev is appropriate or until we've reached out maximum attempts 
+            // Keep reading until the Std Dev is appropriate or until we've reached out maximum attempts
 
             // Add the average to the response if we passed the standard deviation test (or reached max attempts)
             // We don't care about float precision so we round to an integer.
@@ -204,10 +200,10 @@ void loop() {
 
           // Send the response
           client.println(response);
-          
+
           break;
         }
-        
+
         if (c == '\n') {
           // you're starting a new line
           currentLineIsBlank = true;
