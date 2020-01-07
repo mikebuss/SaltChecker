@@ -131,14 +131,14 @@ void loop() {
             // Collect data for this sensor.
             // If the standard deviation is too high, re-collect it.
             int sensorReadAttempts = 0;
+            float average = 0.0;
             float stDev = 0.0;
-
+            
             do {
               int total = 0;
               int rValues[totalReadingsPerSensor];
 
               for (int k = 0; k < totalReadingsPerSensor; k++) {
-
                 int reading = sonarSensors[i].ping_in();
                 int readAttempts = 1;
                 while (reading == 0 && readAttempts < 10) {
@@ -165,14 +165,7 @@ void loop() {
               }
 
               // Get the average
-              float average = float(total) / float(totalReadingsPerSensor);
-
-              // Add the average to the response
-              response = response + average;
-
-              if (average > 1000) {
-                Serial.println("SOMETHING WENT WRONG!!!");
-              }
+              average = float(total) / float(totalReadingsPerSensor);
 
               Serial.print("Average: ");
               Serial.print(average);
@@ -195,6 +188,10 @@ void loop() {
               
             } while (stDev > highestStdDevAllowed && sensorReadAttempts < totalRedoCountForStdDev);
             // Keep reading until the Std Dev is appropriate or until we've reached out maximum attempts 
+
+            // Add the average to the response if we passed the standard deviation test (or reached max attempts)
+            // We don't care about float precision so we round to an integer.
+            response = response + int(average);
 
             // If this isn't the last reading, append a "," to save in JSON form
             if (i < numSensors - 1) {
