@@ -187,12 +187,14 @@ void loop() {
 
             // Add the average to the response if we passed the standard deviation test (or reached max attempts)
             // We don't care about float precision so we round to an integer.
-
             response = response + "{";
             response = response + " \"average\": ";
             response = response + int(average);
             response = response + ",";
 
+            // Include the standard deviation so we can see how noisy the data is.
+            // If the totalRedoCountForStdDev limit was hit, this value can be quite high,
+            // and probably calls for a re-test
             response = response + " \"stDev\": ";
             response = response + stDev;
             response = response + "}";
