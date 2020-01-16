@@ -121,6 +121,22 @@ void loop() {
           //
           // Responses are in the format:
           //
+          // {
+          //   "readings": [
+          //     {
+          //       "value": 14,
+          //       "stDev": 1
+          //     },
+          //     {
+          //       "value": 15,
+          //       "stDev": 2
+          //     },
+          //     {
+          //       "value": 16,
+          //       "stDev": 3
+          //     }
+          //   ]
+          // }
           //
           String response = "{\"readings\":[";
           for (int i = 0; i < numSensors; i++) {
